@@ -64,6 +64,7 @@ namespace Daz3D
 
         public enum DazFigurePlatform
         {
+            Genessis8_1, //added for 8.1
             Genesis8,
             Genesis3,
             Genesis2,
@@ -205,6 +206,7 @@ namespace Daz3D
             if (
                 Shader.Find(DTU_Constants.shaderNameMetal) == null ||
                 Shader.Find(DTU_Constants.shaderNameSpecular) == null ||
+                Shader.Find(DTU_Constants.shaderNamePBRSkin) == null || //added for 8.1
                 Shader.Find(DTU_Constants.shaderNameIraySkin) == null ||
                 Shader.Find(DTU_Constants.shaderNameHair) == null ||
                 Shader.Find(DTU_Constants.shaderNameWet) == null ||
@@ -336,6 +338,7 @@ namespace Daz3D
         private enum StandardMaterialType
         {
             Arms,
+            Body, //added for 8.1
             Cornea,
             Ears,
             Eyelashes,
@@ -344,12 +347,14 @@ namespace Daz3D
             EyeSocket,
             Face,
             Fingernails,
+            Head, //added for 8.1
             Irises,
             Legs,
             Lips,
             Mouth,
             Pupils,
             Sclera,
+            Tear, //added for 8.1
             Teeth,
             Toenails,
             Torso
@@ -656,6 +661,7 @@ namespace Daz3D
 
             switch (figure)
             {
+                case DazFigurePlatform.Genessis8_1:
                 case DazFigurePlatform.Genesis8:
                 case DazFigurePlatform.Genesis3:
                     ConfigureGenesisMapStandard(map);

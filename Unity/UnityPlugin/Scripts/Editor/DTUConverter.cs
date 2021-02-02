@@ -10,6 +10,7 @@ namespace Daz3D
 		public const string shaderNameMetal = "Daz3D/IrayUberMetal";
 		public const string shaderNameSpecular = "Daz3D/IrayUberSpec";
 		public const string shaderNameIraySkin = "Daz3D/IrayUberSkin";
+		public const string shaderNamePBRSkin = "Daz3D/PBRSkin"; //added for 8.1
 		public const string shaderNameHair = "Daz3D/Hair";
 		public const string shaderNameWet = "Daz3D/Wet";
 		public const string shaderNameInvisible = "Daz3D/Invisible";        //special shader that doesn't render anything
@@ -66,6 +67,8 @@ namespace Daz3D
 			DazStudioDefault,
 			OmUberSurface,
 			OOTHairblendingHair,
+			BlendedDualLobeHair, //used in some dforce hairs
+			PBRSkin, //added for 8.1
 		}
 
 		/// <summary>
@@ -132,7 +135,7 @@ namespace Daz3D
 			var assetNameLower = dtuMaterial.AssetName.ToLower();
 			var valueLower = dtuMaterial.Value.ToLower();
 
-			if(matNameLower.Contains("cornea") || matNameLower.Contains("eyemoisture") || matNameLower.Contains("eyereflection"))
+			if(matNameLower.Contains("cornea") || matNameLower.Contains("eyemoisture") || matNameLower.Contains("eyereflection") || matNameLower.Contains("tear"))
 			{
 				return true;
 			}
@@ -157,6 +160,24 @@ namespace Daz3D
 
 			return false;
 		}
+		/// <summary>
+		/// Guess if our material is a skin for Genesis 8.1
+		/// </summary>
+		/// <param name="dTUMaterial"></param>
+		/// <returns></returns>
+		public bool IsDTUMaterialPBRSkin(DTUMaterial dtuMaterial)
+		{
+
+			if (dtuMaterial.MaterialType.Contains("PBRSkin"))
+
+			{
+				Debug.Log("Is it working?");
+				return dtuMaterial.Value == "Actor/Character" || dtuMaterial.Value == "Actor";
+			}
+
+
+			return false;
+		}
 
 		/// <summary>
 		/// Guess if our material is a skin
@@ -170,8 +191,14 @@ namespace Daz3D
 			var dualLobeSpecularReflectivity = dtuMaterial.Get("Dual Lobe Specular Reflectivity");
 
 			if(dtuMaterial.MaterialType == "omUberSurface" || dtuMaterial.MaterialType == "omHumanSurface")
+	
 			{
-				if(IsDTUMaterialWet(dtuMaterial))
+				if (IsDTUMaterialPBRSkin(dtuMaterial))
+				{
+					return false;
+				}
+
+				if (IsDTUMaterialWet(dtuMaterial))
 				{
 					return false;
 				}
@@ -347,6 +374,7 @@ namespace Daz3D
 			//  IrayUberSpec - Used for base mixing of both specular/gloss and weighted
 			//  IrayUberTranslucent - Used when the material is translucent, note metal flow no longer works now
 			//  IrayUberSkin - Used when we guess that the mat is for skin
+			//  PBRSkin - Used when we guessn that the mat is for skin (Genesis 8.1)
 			//  IrayUberHair - Used when we guess that the mat is for hair
 	
 			/**
@@ -443,6 +471,14 @@ namespace Daz3D
 			| Round Corners Across Materials     | X | X | X | B    | Used for smoothing |
 			| Round Corners Roundness            | X | X | X | D    | Used for smoothing |
 			| Line Preview Color                 | X | X | X | C    | ignored by us |
+			| Genesis 8.1 new maps
+			| -----------------------------------|	 |   |   |      | This area has not been taken into account yet|
+			| Detail Weight     
+			| Detail Normal Map
+			| Detail Specular Rougness Mult
+			| Detail Horizontal Tiles
+			| Detail Horizontal Offset
+			| Detail Vertical Tiles
 
 
 			Types: B => Boolean,C => Color, D => Double, E => Enum, T => Texture
@@ -473,6 +509,8 @@ namespace Daz3D
 			bool isHair = false;
 			//Is our material using our skin shader instead (SSS/Translucent/Spec flow)
 			bool isSkin = false;
+			//Is our material using our skin shader instead (PBRSkin/SSS/Translucent/Spec flow)
+			bool isPBRSkin = false;
 			//Does our material have translucency (only valid for spec/gloss workflow for now)
 			bool isTranslucent = false;
 			//Used for things like corena, eyemoisture, etc
@@ -568,17 +606,18 @@ namespace Daz3D
 			isTranslucent = translucencyWeight.Float > 0f;
 
 			isHair = IsDTUMaterialHair(dtuMaterial);
+			isPBRSkin = IsDTUMaterialPBRSkin(dtuMaterial);
 			isSkin = IsDTUMaterialSkin(dtuMaterial);
 			isWet = IsDTUMaterialWet(dtuMaterial);
 			isSclera = IsDTUMaterialSclera(dtuMaterial);
 
 			//Swap shaders if we need to
-			
-			if(isHair)
+
+			if (isHair)
 			{
 				shaderName = DTU_Constants.shaderNameHair;
 			}
-			else if(isSkin)
+			else if (isSkin)
 			{
 				//if we're skin, force a specular workflow as well
 				isSpecular = true;
@@ -587,7 +626,16 @@ namespace Daz3D
 				isTransparent = false;
 				isTranslucent = true;
 			}
-			else if(isWet)
+			else if (isPBRSkin)
+			{
+				//if we're skin, force a specular workflow as well
+				isSpecular = true;
+				shaderName = DTU_Constants.shaderNamePBRSkin;
+				isDoubleSided = false;
+				isTransparent = false;
+				isTranslucent = true;
+			}
+			else if (isWet)
 			{
 				shaderName = DTU_Constants.shaderNameWet;
 			}
@@ -595,9 +643,9 @@ namespace Daz3D
 			{
 				//If we're not hair or skin, let's see which other shader we should fall into
 
-				if(isTranslucent)
+				if (isTranslucent)
 				{
-					if(isMetal)
+					if (isMetal)
 					{
 						UnityEngine.Debug.LogWarning("Using translucency with metal is not supported, swapping to specular instead for mat: " + dtuMaterial.MaterialName);
 					}
@@ -605,15 +653,17 @@ namespace Daz3D
 					//if we're translucent, force into a specular workflow
 					isSpecular = true;
 					shaderName = DTU_Constants.shaderNameSpecular;
-				} else if(isSpecular)
+				}
+				else if (isSpecular)
 				{
 					shaderName = DTU_Constants.shaderNameSpecular;
 				}
-				else if(isMetal)
+				else if (isMetal)
 				{
 					shaderName = DTU_Constants.shaderNameMetal;
 				}
-				else {
+				else
+				{
 					UnityEngine.Debug.LogError("Invalid material, we don't know what shader to pick");
 					return null;
 				}
@@ -1573,6 +1623,114 @@ namespace Daz3D
 			return mat;
 
 		}
+		public Material ConvertToUnityBlendedDualLobeHair(DTUMaterial dtuMaterial, string materialDir)
+		{
+
+			var linePreviewColor = dtuMaterial.Get("Line Preview Color");
+			var lineStartWidth = dtuMaterial.Get("Line Start Width");
+			var lineEndWidth = dtuMaterial.Get("Line End Width");
+			var lineUVWidth = dtuMaterial.Get("Line UV Width");
+
+			var rootTransmissionColor = dtuMaterial.Get("Root Transmission Color");
+			var tipTransmissionColor = dtuMaterial.Get("Tip Transmission Color");
+			var viewportColor = dtuMaterial.Get("Viewport Color");
+			var glossyLayerWeight = dtuMaterial.Get("Glossy Layer Weight");
+			var hairRootColor = dtuMaterial.Get("Hair Root Color");
+			var hairTipColor = dtuMaterial.Get("Hair Tip Color");
+			var baseRoughness = dtuMaterial.Get("base_roughness"); //not a typo
+			var highlightWeight = dtuMaterial.Get("Highlight Weight");
+			var highlightRootColor = dtuMaterial.Get("Highlight Root Color");
+			var tipHighlightColor = dtuMaterial.Get("Tip Highlight Color");
+			var highlightRoughness = dtuMaterial.Get("highlight_roughness"); //not a typo
+			var separation = dtuMaterial.Get("separation"); //not a typo
+			var rootToTipBias = dtuMaterial.Get("Root To Tip Bias");
+			var rootToTipGain = dtuMaterial.Get("Root To Tip Gain");
+			var anisotropy = dtuMaterial.Get("Anisotropy");
+			var anisotropyRotations = dtuMaterial.Get("Anisotropy Rotations");
+			var bumpMode = dtuMaterial.Get("Bump Mode"); //Can either be "Height Map"=0 or "Normal Map"=1
+			var bumpStrength = dtuMaterial.Get("Bump Strength");
+			var cutoutOpacity = dtuMaterial.Get("Cutout Opacity");
+			var strength = dtuMaterial.Get("strength"); //not a typo
+			var minimumDisplacement = dtuMaterial.Get("Minimum Displacement");
+			var maximumDisplacement = dtuMaterial.Get("Maximum Displacement");
+			var subdDisplacementLevel = dtuMaterial.Get("SubD Displacement Level");
+			var diffuseColor = dtuMaterial.Get("Diffuse Color");
+
+
+			var horizontalTile = dtuMaterial.Get("Horizontal Tiles");
+			var horizontalOffset = dtuMaterial.Get("Horizontal Offset");
+			var verticalTile = dtuMaterial.Get("Vertical Tiles");
+			var verticalOffset = dtuMaterial.Get("Vertical Offset");
+			var uvSet = dtuMaterial.Get("UV Set");
+
+
+			var matNameLower = dtuMaterial.MaterialName.ToLower();
+			var assetNameLower = dtuMaterial.AssetName.ToLower();
+			var valueLower = dtuMaterial.Value.ToLower();
+			
+			string shaderName = DTU_Constants.shaderNameHair;
+			var shader = Shader.Find(shaderName);
+			if(shader == null)
+			{
+				UnityEngine.Debug.LogError("Failed to locate shader: " + shaderName + " for mat: " + dtuMaterial.MaterialName);
+				return null;
+			}
+			var mat = new Material(shader);
+			var record = new Daz3DDTUImporter.ImportEventRecord();
+
+
+			bool isDoubleSided = true;
+			bool isTransparent = true;
+
+			mat.SetColor("_Diffuse",diffuseColor.Color);
+			mat.SetTexture("_DiffuseMap",ImportTextureFromPath(diffuseColor.Texture,materialDir, record));
+
+			if(Mathf.Approximately((float)bumpMode.Value.AsDouble,0))
+			{
+				//height map
+				mat.SetFloat("_Height",bumpStrength.Float);
+				mat.SetTexture("_HeightMap",ImportTextureFromPath(bumpStrength.Texture,materialDir, record, false, true));
+				mat.SetFloat("_HeightOffset",0.25f);
+			}
+			else
+			{
+				//normal map
+				mat.SetTexture("_NormalMap",ImportTextureFromPath(bumpStrength.Texture,materialDir, record, true));
+				mat.SetFloat("_NormalStrength",bumpStrength.Float);
+			}
+
+			mat.SetTexture("_CutoutOpacityMap",ImportTextureFromPath(cutoutOpacity.Texture,materialDir, record, false, true));
+			mat.SetTexture("_GlossyRoughnessMap",ImportTextureFromPath(baseRoughness.Texture,materialDir, record, false, true));
+			mat.SetFloat("_GlossyRoughness",baseRoughness.Float);
+
+			mat.SetTexture("_SpecularMap",ImportTextureFromPath(hairRootColor.Texture,materialDir,record));
+			mat.SetColor("_SpecularColor",hairRootColor.Color);
+			
+			mat.SetTexture("_SpecularMapSecondary",ImportTextureFromPath(hairTipColor.Texture,materialDir,record));
+			mat.SetColor("_SpecularColorSecondary",hairTipColor.Color);
+
+			//A few magic values that work for most hairs
+			mat.SetFloat("_AlphaStrength",1.5f);
+			mat.SetFloat("_AlphaOffset",0.35f);
+			mat.SetFloat("_AlphaClip",0.75f);
+			mat.SetFloat("_AlphaPower",0.4f);
+
+
+			bool hasDualLobeSpecularWeight = false;
+			bool hasDualLobeSpecularReflectivity = false;
+			bool hasGlossyLayeredWeight = false;
+			bool hasGlossyColor = false;
+			int sortingPriority = 0;
+
+			ToggleCommonMaterialProperties(ref mat,matNameLower,isTransparent,isDoubleSided, hasDualLobeSpecularWeight, hasDualLobeSpecularReflectivity,sortingPriority,hasGlossyLayeredWeight,hasGlossyColor);
+
+			if (record.Tokens.Count > 0)
+			{
+				Daz3DDTUImporter.EventQueue.Enqueue(record);
+			}
+
+			return mat;
+		}
 		
 		public Material ConvertToUnityOOTHairblendingHair(DTUMaterial dtuMaterial, string materialDir)
 		{
@@ -1720,7 +1878,7 @@ namespace Daz3D
 
 			//Look at the shader name from Daz and see if it's one we are familiar with
 
-			if(dtuMaterial.MaterialType == "PBR SP")
+			if (dtuMaterial.MaterialType == "PBR SP")
 			{
 				/**
 				 * Properties
@@ -1737,21 +1895,29 @@ namespace Daz3D
 				materialType = DTUMaterialType.PBRSP;
 
 			}
-			else if(dtuMaterial.MaterialType == "Iray Uber" || dtuMaterial.MaterialType == "Front")
+			else if (dtuMaterial.MaterialType == "Iray Uber" || dtuMaterial.MaterialType == "Front")
 			{
 				materialType = DTUMaterialType.IrayUber;
 			}
-			else if(dtuMaterial.MaterialType == "DAZ Studio Default")
+			else if (dtuMaterial.MaterialType == "DAZ Studio Default")
 			{
 				materialType = DTUMaterialType.DazStudioDefault;
 			}
-			else if(dtuMaterial.MaterialType == "omUberSurface" || dtuMaterial.MaterialType == "omHumanSurface")
+			else if (dtuMaterial.MaterialType == "omUberSurface" || dtuMaterial.MaterialType == "omHumanSurface")
 			{
 				materialType = DTUMaterialType.OmUberSurface;
 			}
-			else if(dtuMaterial.MaterialType == "OOT Hairblending Hair" || (dtuMaterial.MaterialType == "Cap" && dtuMaterial.Get("Cap Base Texture").Exists))
+			else if (dtuMaterial.MaterialType == "OOT Hairblending Hair" || (dtuMaterial.MaterialType == "Cap" && dtuMaterial.Get("Cap Base Texture").Exists))
 			{
 				materialType = DTUMaterialType.OOTHairblendingHair;
+			}
+			else if (dtuMaterial.MaterialType == "Blended Dual Lobe Hair")
+			{
+				materialType = DTUMaterialType.BlendedDualLobeHair;
+			}
+			else if (dtuMaterial.MaterialType == "PBRSkin")
+			{
+				materialType = DTUMaterialType.PBRSkin;
 			}
 			else
 			{
@@ -1805,7 +1971,24 @@ namespace Daz3D
 					SaveMaterialAsAsset(localMat,materialPath);
 					return localMat;
 				}
-			}
+			} else if(materialType == DTUMaterialType.BlendedDualLobeHair)
+			{
+				var localMat = ConvertToUnityBlendedDualLobeHair(dtuMaterial,materialDir);
+				if(localMat != null)
+				{
+					SaveMaterialAsAsset(localMat,materialPath);
+					return localMat;
+				}
+			} else if(materialType == DTUMaterialType.PBRSkin)
+            {	
+				//UsingIrayUber for now but, we do need to build a seperate Material for PBR Skin
+				var localMat = ConvertToUnityIrayUber(dtuMaterial, materialDir);
+				if(localMat != null)
+                {
+					SaveMaterialAsAsset(localMat, materialPath);
+					return localMat;
+                }
+            }
 
 			UnityEngine.Debug.LogError("Unsupported materialType: " + materialType + " raw shade ris: " + dtuMaterial.MaterialType);
 			return null;
